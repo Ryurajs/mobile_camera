@@ -46,6 +46,7 @@ export default function App() {
   const [active, setActive] = useState(false);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const [landscapeMode, setLandscapeMode] = useState(false);
   const [snapshot, setSnapshot] = useState<CameraSnapshot | null>(null);
 
   useEffect(() => {
@@ -226,15 +227,25 @@ export default function App() {
       <StatusBar style="light" />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.cameraPane}>
-          <View style={styles.videoFrame}>
+          <View style={[styles.videoFrame, landscapeMode && styles.landscapeVideoFrame]}>
             {remoteStream && active
               ? <video ref={videoRef} autoPlay playsInline onPlaying={() => { setVideoPlaying(true); setStatus('Live camera connected.'); }} onWaiting={() => setVideoPlaying(false)} style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#050706' }} />
               : null}
           </View>
           <View style={styles.snapshotActions}>
-            <Pressable accessibilityRole="button" disabled={!videoPlaying} style={[styles.snapButton, !videoPlaying && styles.disabled]} onPress={takeSnapshot}>
-              <Text style={styles.snapButtonText}>Take snapshot</Text>
-            </Pressable>
+            <View style={styles.cameraActions}>
+              <Pressable accessibilityRole="button" disabled={!videoPlaying} style={[styles.snapButton, !videoPlaying && styles.disabled]} onPress={takeSnapshot}>
+                <Text style={styles.snapButtonText}>Take snapshot</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={landscapeMode ? 'Exit landscape view' : 'Switch to landscape view'}
+                style={styles.modeButton}
+                onPress={() => setLandscapeMode((enabled) => !enabled)}
+              >
+                <Text style={styles.modeButtonText}>{landscapeMode ? 'Portrait' : 'Landscape'}</Text>
+              </Pressable>
+            </View>
             {snapshot && (
               <View style={styles.snapshotPreview}>
                 <img src={snapshot.url} alt="Camera snapshot" style={{ width: 64, height: 48, objectFit: 'cover' }} />
@@ -279,9 +290,13 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 20, padding: 20, width: '100%', maxWidth: 1600, alignSelf: 'center' },
   cameraPane: { flex: 1, minWidth: 300, minHeight: 360, backgroundColor: '#050706', borderRadius: 4, overflow: 'hidden' },
   videoFrame: { flex: 1, minHeight: 360, width: '100%', backgroundColor: '#050706', overflow: 'hidden' },
+  landscapeVideoFrame: { flex: 0, minHeight: 0, aspectRatio: 16 / 9 },
   snapshotActions: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingHorizontal: 12, borderTopWidth: 1, borderTopColor: '#303b33' },
+  cameraActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   snapButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 16, backgroundColor: '#c9f36a', borderRadius: 4 },
   snapButtonText: { color: '#182016', fontSize: 13, fontWeight: '800' },
+  modeButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderColor: '#718076', borderWidth: 1, borderRadius: 4 },
+  modeButtonText: { color: '#edf1ec', fontSize: 12, fontWeight: '700' },
   snapshotPreview: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   copyButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderColor: '#718076', borderWidth: 1, borderRadius: 4 },
   copyButtonText: { color: '#edf1ec', fontSize: 13, fontWeight: '700' },
