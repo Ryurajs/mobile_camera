@@ -10,11 +10,18 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Camera Link to show a preview after you accept a request.",
+          "cameraPermission": "Allow Camera Link to use the camera when you choose to share it.",
           "recordAudioAndroid": false
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow Camera Link to share video after you accept a request.",
+          "microphonePermission": "Camera Link does not record audio."
+        }
+      ]
     ],
     "ios": {
       "supportsTablet": true
@@ -30,6 +37,9 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {

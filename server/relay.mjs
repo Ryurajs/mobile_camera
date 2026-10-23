@@ -7,6 +7,7 @@ const port = Number(process.env.PORT ?? 8787);
 const requestTimeoutMs = 60_000;
 const devices = new Map();
 const pendingRequests = new Map();
+const activeSessions = new Map();
 const httpServer = createServer((request, response) => {
   if (request.url === '/healthz') {
     response.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -91,7 +92,31 @@ server.on('connection', (socket) => {
       if (!pending || pending.phone !== socket || registeredDeviceId !== pending.deviceId) return;
       clearTimeout(pending.timer);
       pendingRequests.delete(message.requestId);
+      if (message.accepted === true) activeSessions.set(message.requestId, pending);
       send(pending.browser, { type: 'response', requestId: message.requestId, accepted: message.accepted === true });
+      return;
+    }
+
+    if (['offer', 'answer', 'candidate'].includes(message.type)) {
+      const session = activeSessions.get(message.requestId);
+      if (!session || (socket !== session.phone && socket !== session.browser)) return;
+      send(socket === session.phone ? session.browser : session.phone, message);
+      return;
+    }
+
+    if (message.type === 'disconnect') {
+      const active = activeSessions.get(message.requestId);
+      if (active && (socket === active.phone || socket === active.browser)) {
+        activeSessions.delete(message.requestId);
+        send(socket === active.phone ? active.browser : active.phone, { type: 'disconnect', requestId: message.requestId });
+        return;
+      }
+      const pending = pendingRequests.get(message.requestId);
+      if (pending && (socket === pending.phone || socket === pending.browser)) {
+        clearTimeout(pending.timer);
+        pendingRequests.delete(message.requestId);
+        send(socket === pending.phone ? pending.browser : pending.phone, { type: 'closed', requestId: message.requestId });
+      }
       return;
     }
 
@@ -107,6 +132,15 @@ server.on('connection', (socket) => {
       clearTimeout(pending.timer);
       pendingRequests.delete(requestId);
       if (pending.browser !== socket) send(pending.browser, { type: 'response', requestId, accepted: false, message: 'The phone disconnected.' });
+    }
+    for (const [requestId, session] of activeSessions) {
+      if (session.browser !== socket && session.phone !== socket) continue;
+      activeSessions.delete(requestId);
+      send(session.browser === socket ? session.phone : session.browser, {
+        type: 'disconnect',
+        requestId,
+        message: 'The other device disconnected.',
+      });
     }
   });
 });

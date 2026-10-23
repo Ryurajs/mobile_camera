@@ -7,9 +7,10 @@ An Expo starter with an Android phone receiver, a browser requester, and a small
 - The phone generates and securely stores an 8-digit device number and a separate 16-character pairing key.
 - The browser needs only the phone's 8-digit number to send a request.
 - The phone displays an incoming request and requires a person to tap **Accept** or **Decline**.
-- Camera permission is requested only after acceptance. The preview is visible on the phone and can be stopped there.
-- This starter does not send camera video to the browser. It only relays the request and approval result.
-- The phone app must be open and connected to the relay to receive requests; background delivery is not configured.
+- Camera permission is requested on first launch. Every camera-sharing session still requires the phone owner to accept.
+- Accepted sessions stream live video to the browser using WebRTC. Either side can disconnect.
+- The browser can optionally save the phone number in that browser's local storage.
+- The phone app must be open and connected to the relay to receive requests; background delivery is not configured. Audio capture is disabled.
 
 ## Run locally
 
@@ -28,7 +29,7 @@ The `render.yaml` Blueprint creates a public WebSocket relay and a static web ap
 
 For the Android APK, add `EXPO_PUBLIC_SIGNALING_HOST` to the Expo project's **preview** environment variables, using the relay's public hostname without `https://` (for example, `camera-link-relay.onrender.com`). Then build a new APK with `npx eas-cli build --platform android --profile preview`. The APK must be rebuilt whenever the public relay hostname changes.
 
-Render's free web services may sleep when idle. The phone reconnects automatically with backoff, but it must remain open in the foreground to receive requests. This prototype keeps device registrations in memory, so a relay restart requires the phone app to reconnect; use a durable authenticated enrollment service before production use.
+Render's free web services may sleep when idle. The phone reconnects automatically with backoff, but it must remain open in the foreground to receive requests. This prototype keeps device registrations in memory, so a relay restart requires the phone app to reconnect. WebRTC uses a public STUN server; some networks require a TURN service for reliable video.
 
 ## APK build
 
@@ -36,4 +37,4 @@ This project uses Expo prebuild/EAS rather than checked-in native Android files.
 
 ## Security boundary
 
-The relay is a development prototype: it keeps phone credentials in memory, has no account system, durable pairing, abuse controls, or TLS of its own. Do not expose it to the public internet or use real camera access with untrusted users. A production service needs WSS, authenticated device enrollment, revocable pairing, rate limiting, request audit/expiry, and a privacy review. A device number by itself is not authentication.
+The relay is a development prototype: it keeps device registration in memory and has no account system or abuse controls. Requests require explicit on-phone approval, but the 8-digit number is not authentication. Use authenticated enrollment, revocable pairing, rate limiting, and a privacy review before broad production use.
