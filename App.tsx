@@ -2,7 +2,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -50,9 +50,14 @@ export default function App() {
 
 function PhonePanel() {
   const socketRef = useRef<WebSocket | null>(null);
+  const autoAcceptRef = useRef(false);
+  const answerRequestRef = useRef<((accepted: boolean, requestId?: string) => void) | null>(null);
+  const incomingRequestIdRef = useRef<string | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
   const [credentials, setCredentials] = useState<DeviceCredentials | null>(null);
   const [connection, setConnection] = useState('Connecting to relay');
   const [incoming, setIncoming] = useState<IncomingRequest | null>(null);
+  const [autoAccept, setAutoAccept] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const [permission, requestPermission] = useCameraPermissions();
@@ -92,10 +97,19 @@ function PhonePanel() {
       socket.onmessage = (event) => {
         const message = JSON.parse(String(event.data)) as RelayMessage;
         if (message.type === 'request' && message.requestId) {
+          incomingRequestIdRef.current = message.requestId;
           setIncoming({ requestId: message.requestId, browserName: message.message });
+          if (autoAcceptRef.current) void answerRequestRef.current?.(true, message.requestId);
         }
         if (message.type === 'error') setNotice(message.message ?? 'Relay error');
-        if (message.type === 'closed') setCameraOpen(false);
+        if (message.type === 'closed' && message.requestId === incomingRequestIdRef.current) {
+          incomingRequestIdRef.current = null;
+          setIncoming(null);
+        }
+        if (message.type === 'disconnect' && message.requestId === activeRequestIdRef.current) {
+          activeRequestIdRef.current = null;
+          setCameraOpen(false);
+        }
       };
       socket.onerror = () => setConnection('Connection error');
       socket.onclose = () => {
@@ -115,12 +129,17 @@ function PhonePanel() {
     };
   }, [credentials]);
 
-  async function answerRequest(accepted: boolean) {
-    if (!incoming) return;
+  const answerRequest = useCallback(async (accepted: boolean, requestIdOverride?: string) => {
+    const requestId = requestIdOverride ?? incoming?.requestId;
+    if (!requestId) return;
+    if (incomingRequestIdRef.current === requestId) incomingRequestIdRef.current = null;
     if (accepted) {
+      activeRequestIdRef.current = requestId;
       const result = permission?.granted ? permission : await requestPermission();
+      if (activeRequestIdRef.current !== requestId) return;
       if (!result.granted) {
-        send(socketRef.current, { type: 'response', requestId: incoming.requestId, accepted: false });
+        activeRequestIdRef.current = null;
+        send(socketRef.current, { type: 'response', requestId, accepted: false });
         setNotice('Camera permission was not granted. The request was declined.');
         setIncoming(null);
         return;
@@ -128,8 +147,18 @@ function PhonePanel() {
       setCameraOpen(true);
       setNotice('Camera is active. The preview is visible on this phone.');
     }
-    send(socketRef.current, { type: 'response', requestId: incoming.requestId, accepted });
+    send(socketRef.current, { type: 'response', requestId, accepted });
     setIncoming(null);
+  }, [incoming, permission, requestPermission]);
+  useEffect(() => {
+    answerRequestRef.current = answerRequest;
+  }, [answerRequest]);
+
+  function toggleAutoAccept() {
+    const enabled = !autoAccept;
+    autoAcceptRef.current = enabled;
+    setAutoAccept(enabled);
+    if (enabled && incoming) void answerRequest(true, incoming.requestId);
   }
 
   if (!credentials) {
@@ -144,6 +173,7 @@ function PhonePanel() {
         <View style={styles.cameraOverlay}>
           <View style={styles.liveTag}><View style={styles.liveDot} /><Text style={styles.liveText}>CAMERA ACTIVE</Text></View>
           <Text style={styles.cameraCaption}>This phone&apos;s camera is on</Text>
+          <AutoAcceptControl enabled={autoAccept} onToggle={toggleAutoAccept} />
           <Pressable style={styles.stopButton} onPress={() => setCameraOpen(false)}>
             <Text style={styles.stopButtonText}>Stop camera</Text>
           </Pressable>
@@ -159,13 +189,14 @@ function PhonePanel() {
         <View style={styles.topline}><Text style={styles.brand}>LANTERN / CAMERA LINK</Text><View style={styles.connection}><View style={[styles.connectionDot, connection === 'Connected' && styles.online]} /><Text style={styles.connectionText}>{connection}</Text></View></View>
         <Text style={styles.eyebrow}>PHONE RECEIVER</Text>
         <Text style={styles.title}>Your camera,{ '\n' }your call.</Text>
-        <Text style={styles.subtitle}>A browser can ask to connect. Nothing opens until you approve it here.</Text>
+        <Text style={styles.subtitle}>Requests need your approval unless session-only auto-accept is enabled.</Text>
 
         <View style={styles.identityPanel}>
           <Text style={styles.panelLabel}>THIS PHONE&apos;S NUMBER</Text>
           <Text selectable style={styles.deviceNumber}>{credentials.deviceId}</Text>
           <Text style={styles.panelFootnote}>Share this number with the person you want to receive a camera request from.</Text>
         </View>
+        <AutoAcceptControl enabled={autoAccept} onToggle={toggleAutoAccept} />
 
         {incoming ? (
           <View style={styles.requestPanel}>
@@ -242,8 +273,8 @@ function BrowserPanel() {
           </Pressable>
           <Text accessibilityRole="status" style={styles.statusText}>{status}</Text>
         </View>
-        <View style={styles.infoLine}><Text style={styles.infoIndex}>01</Text><Text style={styles.infoText}>The phone shows who is asking and waits for a decision.</Text></View>
-        <View style={styles.infoLine}><Text style={styles.infoIndex}>02</Text><Text style={styles.infoText}>Camera permission is requested only after the phone&apos;s owner accepts.</Text></View>
+        <View style={styles.infoLine}><Text style={styles.infoIndex}>01</Text><Text style={styles.infoText}>The phone owner can approve requests or enable session-only auto-accept.</Text></View>
+        <View style={styles.infoLine}><Text style={styles.infoIndex}>02</Text><Text style={styles.infoText}>Camera access still depends on the phone&apos;s camera permission.</Text></View>
         <Text style={styles.footer}>This starter opens the camera preview on the phone; it does not stream video to this page.</Text>
       </ScrollView>
     </SafeAreaView>
@@ -252,6 +283,20 @@ function BrowserPanel() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <SafeAreaView style={styles.screen}><View style={styles.centered}>{children}</View></SafeAreaView>;
+}
+
+function AutoAcceptControl({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  return (
+    <View style={styles.autoAcceptRow}>
+      <View style={styles.autoAcceptCopy}>
+        <Text style={styles.autoAcceptTitle}>Auto-accept requests</Text>
+        <Text style={styles.autoAcceptHint}>Turns on the camera for incoming requests. Resets when the app closes.</Text>
+      </View>
+      <Pressable accessibilityRole="switch" accessibilityLabel="Auto-accept requests" accessibilityState={{ checked: enabled }} onPress={onToggle}>
+        <View style={[styles.switchTrack, enabled && styles.switchOn]}><View style={[styles.switchThumb, enabled && styles.switchThumbOn]} /></View>
+      </Pressable>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -272,6 +317,14 @@ const styles = StyleSheet.create({
   panelLabel: { color: '#91a095', fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
   deviceNumber: { color: '#f1f4ef', fontSize: 34, fontWeight: '700', letterSpacing: 2, marginTop: 8 },
   panelFootnote: { color: '#88958b', fontSize: 12, marginTop: 12 },
+  autoAcceptRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#303b33', marginBottom: 18 },
+  autoAcceptCopy: { flex: 1, gap: 4 },
+  autoAcceptTitle: { color: '#e5ebe5', fontSize: 13, fontWeight: '700' },
+  autoAcceptHint: { color: '#98a49b', fontSize: 11, lineHeight: 16 },
+  switchTrack: { width: 46, height: 28, borderRadius: 14, backgroundColor: '#49554c', justifyContent: 'center', padding: 3 },
+  switchOn: { backgroundColor: '#7fae3d' },
+  switchThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#f3f5f1' },
+  switchThumbOn: { alignSelf: 'flex-end' },
   waitingRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4 },
   waitingPulse: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#c9f36a' },
   waitingText: { color: '#c4cdc6', fontSize: 14 },
