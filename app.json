@@ -21,6 +21,14 @@
           "cameraPermission": "Allow Camera Link to share video after you accept a request.",
           "microphonePermission": "Camera Link does not record audio."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraProguardRules": "-dontwarn org.webrtc.Dav1dDecoder$Natives"
+          }
+        }
       ]
     ],
     "ios": {
