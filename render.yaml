@@ -9,11 +9,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22.13.0
-      - key: PUBLIC_RELAY_HOST
-        fromService:
-          type: web
-          name: camera-link-relay
-          envVarKey: RENDER_EXTERNAL_HOSTNAME
 
   - type: web
     name: camera-link-web
@@ -27,4 +22,4 @@ services:
         fromService:
           type: web
           name: camera-link-relay
-          envVarKey: PUBLIC_RELAY_HOST
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
